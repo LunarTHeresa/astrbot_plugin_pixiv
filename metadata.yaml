@@ -1,0 +1,5 @@
+name: astrbot_plugin_pixiv
+version: 0.1.0
+author: local
+description: Pixiv image/novel plugin for AstrBot with optional R18 commands
+repo: ""
