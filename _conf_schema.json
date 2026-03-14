@@ -1,0 +1,14 @@
+{
+  "pixiv_refresh_token": {
+    "description": "Pixiv refresh_token",
+    "type": "string",
+    "hint": "使用 get_pixiv_token_manual.py 获取后粘贴到这里",
+    "obvious_hint": true
+  },
+  "allow_r18": {
+    "description": "是否允许 R18 指令",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后可使用 /pixr 和 /novelr"
+  }
+}

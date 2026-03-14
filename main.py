@@ -108,14 +108,25 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.2",
+    "1.0.3",
+    "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
-    async def initialize(self):
-        # 避免在 __init__ 阶段与 AstrBot 内部属性注入顺序冲突
+    # 兼容旧版加载流程中对 proxy 的访问
+    proxy = None
+
+    def __init__(self, context: Context, config: Optional[Dict[str, Any]] = None):
+        self.proxy = None
+        super().__init__(context)
+        self.config = config or {}
+
         self.refresh_token = ""
         self.allow_r18 = False
         self.client: Optional[PixivClient] = None
+        self._load_conf()
+
+    async def initialize(self):
+        # 避免某些版本在 initialize 后才注入配置
         self._load_conf()
 
     async def terminate(self):
