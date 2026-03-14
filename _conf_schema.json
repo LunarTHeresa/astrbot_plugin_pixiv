@@ -28,5 +28,11 @@
     "type": "bool",
     "default": true,
     "hint": "开启后插件先通过代理下载图片再发送，可避免 QQ 侧直连 pximg 超时"
+  },
+  "prefer_tag_search": {
+    "description": "优先按标签精确检索",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后先按标签 exact_match_for_tags 搜索，再回退到模糊匹配"
   }
 }

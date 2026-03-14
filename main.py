@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import random
 import re
 import tempfile
@@ -66,14 +67,27 @@ class PixivClient:
 
     async def get(self, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         headers = await self._auth_headers()
-        client_kwargs: Dict[str, Any] = {"timeout": self.timeout_sec}
+        client_kwargs: Dict[str, Any] = {
+            "timeout": self.timeout_sec,
+            "follow_redirects": True,
+        }
         if self.proxy_url:
             client_kwargs["proxy"] = self.proxy_url
 
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            resp = await client.get(f"{PIXIV_API_BASE}{path}", headers=headers, params=params)
-            resp.raise_for_status()
-            return resp.json()
+        last_err: Optional[Exception] = None
+        for _ in range(2):
+            try:
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    resp = await client.get(f"{PIXIV_API_BASE}{path}", headers=headers, params=params)
+                    resp.raise_for_status()
+                    return resp.json()
+            except httpx.HTTPError as e:
+                last_err = e
+                await asyncio.sleep(0.2)
+
+        if last_err:
+            raise last_err
+        raise RuntimeError("Pixiv request failed")
 
     async def get_raw_bytes(self, url: str) -> bytes:
         headers = await self._auth_headers()
@@ -85,16 +99,29 @@ class PixivClient:
         req_headers = dict(headers)
         req_headers["Referer"] = referer
 
-        client_kwargs: Dict[str, Any] = {"timeout": self.timeout_sec}
+        client_kwargs: Dict[str, Any] = {
+            "timeout": self.timeout_sec,
+            "follow_redirects": True,
+        }
         if self.proxy_url:
             client_kwargs["proxy"] = self.proxy_url
 
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            resp = await client.get(url, headers=req_headers)
-            resp.raise_for_status()
-            return resp.content
+        last_err: Optional[Exception] = None
+        for _ in range(2):
+            try:
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    resp = await client.get(url, headers=req_headers)
+                    resp.raise_for_status()
+                    return resp.content
+            except httpx.HTTPError as e:
+                last_err = e
+                await asyncio.sleep(0.2)
 
-    async def search_illust(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
+        if last_err:
+            raise last_err
+        raise RuntimeError("Pixiv image download failed")
+
+    async def search_illust(self, word: str, r18: bool, random_pick: bool = True, prefer_tags: bool = True) -> Optional[Dict[str, Any]]:
         async def _query(q_word: str, target: str = "partial_match_for_tags") -> list[Dict[str, Any]]:
             data = await self.get(
                 "/v1/search/illust",
@@ -114,15 +141,35 @@ class PixivClient:
                     matched.append(item)
             return matched
 
-        matched = await _query(word)
-        if not matched and r18:
-            matched = await _query(f"{word} R-18", "exact_match_for_tags")
+        strategies = []
+        if prefer_tags:
+            strategies += [
+                (word, "exact_match_for_tags"),
+                (word, "partial_match_for_tags"),
+            ]
+        else:
+            strategies += [
+                (word, "partial_match_for_tags"),
+                (word, "exact_match_for_tags"),
+            ]
+
+        if r18:
+            strategies += [
+                (f"{word} R-18", "exact_match_for_tags"),
+                (f"{word} R-18", "partial_match_for_tags"),
+            ]
+
+        matched: list[Dict[str, Any]] = []
+        for q_word, target in strategies:
+            matched = await _query(q_word, target)
+            if matched:
+                break
 
         if not matched:
             return None
         return random.choice(matched) if random_pick else matched[0]
 
-    async def search_novel(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
+    async def search_novel(self, word: str, r18: bool, random_pick: bool = True, prefer_tags: bool = True) -> Optional[Dict[str, Any]]:
         async def _query(q_word: str, target: str = "partial_match_for_tags") -> list[Dict[str, Any]]:
             data = await self.get(
                 "/v1/search/novel",
@@ -142,9 +189,29 @@ class PixivClient:
                     matched.append(item)
             return matched
 
-        matched = await _query(word)
-        if not matched and r18:
-            matched = await _query(f"{word} R-18", "exact_match_for_tags")
+        strategies = []
+        if prefer_tags:
+            strategies += [
+                (word, "exact_match_for_tags"),
+                (word, "partial_match_for_tags"),
+            ]
+        else:
+            strategies += [
+                (word, "partial_match_for_tags"),
+                (word, "exact_match_for_tags"),
+            ]
+
+        if r18:
+            strategies += [
+                (f"{word} R-18", "exact_match_for_tags"),
+                (f"{word} R-18", "partial_match_for_tags"),
+            ]
+
+        matched: list[Dict[str, Any]] = []
+        for q_word, target in strategies:
+            matched = await _query(q_word, target)
+            if matched:
+                break
 
         if not matched:
             return None
@@ -159,7 +226,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.7",
+    "1.0.8",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -176,6 +243,7 @@ class PixivPlugin(Star):
         self.pixiv_proxy = ""
         self.request_timeout_sec = 30
         self.send_image_as_file = True
+        self.prefer_tag_search = True
         self.client: Optional[PixivClient] = None
         self._load_conf()
 
@@ -215,6 +283,7 @@ class PixivPlugin(Star):
         proxy_url = str(conf.get("pixiv_proxy", "")).strip()
         timeout_raw = conf.get("request_timeout_sec", 30)
         send_image_as_file_raw = conf.get("send_image_as_file", True)
+        prefer_tag_search_raw = conf.get("prefer_tag_search", True)
         try:
             timeout_sec = int(timeout_raw)
         except Exception:
@@ -230,11 +299,17 @@ class PixivPlugin(Star):
         else:
             send_image_as_file = bool(send_image_as_file_raw)
 
+        if isinstance(prefer_tag_search_raw, str):
+            prefer_tag_search = prefer_tag_search_raw.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            prefer_tag_search = bool(prefer_tag_search_raw)
+
         self.refresh_token = token
         self.allow_r18 = allow_flag
         self.pixiv_proxy = proxy_url
         self.request_timeout_sec = max(5, timeout_sec)
         self.send_image_as_file = send_image_as_file
+        self.prefer_tag_search = prefer_tag_search
         self.client = PixivClient(
             token,
             proxy_url=self.pixiv_proxy,
@@ -243,8 +318,11 @@ class PixivPlugin(Star):
 
     def _token_error_hint(self, err: Exception) -> str:
         msg = str(err)
+        msg_lower = msg.lower()
         if "400" in msg and "auth/token" in msg:
             return "Pixiv token 刷新失败（400）。请重新获取并填写新的 refresh_token。"
+        if "all connection attempts failed" in msg_lower or "connect" in msg_lower:
+            return "连接 Pixiv 失败。请确认 pixiv_proxy 可用，Docker 环境建议填写 http://172.17.0.1:7890。"
         return f"Pixiv 请求失败：{msg[:120]}"
 
     def _keyword(self, text: str) -> str:
@@ -326,7 +404,7 @@ class PixivPlugin(Star):
 
         kw = self._keyword(event.message_str)
         try:
-            item = await self.client.search_illust(kw, False)
+            item = await self.client.search_illust(kw, False, prefer_tags=self.prefer_tag_search)
         except httpx.ConnectTimeout:
             yield event.plain_result(
                 "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
@@ -351,7 +429,7 @@ class PixivPlugin(Star):
 
         kw = self._keyword(event.message_str)
         try:
-            item = await self.client.search_illust(kw, True)
+            item = await self.client.search_illust(kw, True, prefer_tags=self.prefer_tag_search)
         except httpx.ConnectTimeout:
             yield event.plain_result(
                 "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
@@ -376,7 +454,7 @@ class PixivPlugin(Star):
 
         kw = self._keyword(event.message_str)
         try:
-            item = await self.client.search_novel(kw, False)
+            item = await self.client.search_novel(kw, False, prefer_tags=self.prefer_tag_search)
         except httpx.ConnectTimeout:
             yield event.plain_result(
                 "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
@@ -401,7 +479,7 @@ class PixivPlugin(Star):
 
         kw = self._keyword(event.message_str)
         try:
-            item = await self.client.search_novel(kw, True)
+            item = await self.client.search_novel(kw, True, prefer_tags=self.prefer_tag_search)
         except httpx.ConnectTimeout:
             yield event.plain_result(
                 "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
