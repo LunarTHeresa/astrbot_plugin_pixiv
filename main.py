@@ -114,9 +114,17 @@ class PixivPlugin(Star):
     # 作为类属性预置，避免框架在实例初始化前读取时报错
     proxy = None
 
+    def __getattr__(self, name: str):
+        # 极端情况下框架在初始化期间访问 proxy，兜底返回 None
+        if name == "proxy":
+            return None
+        raise AttributeError(name)
+
     def __init__(self, context: Context):
+        # 先放置实例级 proxy，再调用父类初始化
+        self.proxy = None
         super().__init__(context)
-        # 兼容部分 AstrBot 版本在初始化阶段读取 proxy
+        # 兼容部分 AstrBot 版本在初始化阶段读取 provider.proxy
         self.proxy = getattr(getattr(context, "provider", None), "proxy", None)
 
         self.refresh_token = ""
