@@ -111,31 +111,19 @@ class PixivClient:
     "1.0.2",
 )
 class PixivPlugin(Star):
-    # 作为类属性预置，避免框架在实例初始化前读取时报错
-    proxy = None
-
-    def __getattr__(self, name: str):
-        # 极端情况下框架在初始化期间访问 proxy，兜底返回 None
-        if name == "proxy":
-            return None
-        raise AttributeError(name)
-
-    def __init__(self, context: Context):
-        # 先放置实例级 proxy，再调用父类初始化
-        self.proxy = None
-        super().__init__(context)
-        # 兼容部分 AstrBot 版本在初始化阶段读取 provider.proxy
-        self.proxy = getattr(getattr(context, "provider", None), "proxy", None)
-
+    async def initialize(self):
+        # 避免在 __init__ 阶段与 AstrBot 内部属性注入顺序冲突
         self.refresh_token = ""
         self.allow_r18 = False
         self.client: Optional[PixivClient] = None
         self._load_conf()
 
+    async def terminate(self):
+        return
+
     def _load_conf(self) -> None:
         conf: Dict[str, Any] = {}
 
-        # 兼容不同 AstrBot 版本的配置读取方式
         for candidate in (
             getattr(self, "config", None),
             getattr(getattr(self, "context", None), "config", None),
@@ -167,13 +155,6 @@ class PixivPlugin(Star):
         self.refresh_token = token
         self.allow_r18 = allow_flag
         self.client = PixivClient(token) if token else None
-
-    async def initialize(self):
-        # 部分版本会在 initialize 后才注入配置，故再次加载
-        self._load_conf()
-
-    async def terminate(self):
-        return
 
     def _keyword(self, text: str) -> str:
         text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
