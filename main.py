@@ -5,6 +5,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import httpx
 from astrbot.api.event import AstrMessageEvent, filter
@@ -73,6 +74,25 @@ class PixivClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_raw_bytes(self, url: str) -> bytes:
+        headers = await self._auth_headers()
+        parsed = urlparse(url)
+        referer = "https://www.pixiv.net/"
+        if parsed.scheme and parsed.netloc:
+            referer = f"{parsed.scheme}://{parsed.netloc}/"
+
+        req_headers = dict(headers)
+        req_headers["Referer"] = referer
+
+        client_kwargs: Dict[str, Any] = {"timeout": self.timeout_sec}
+        if self.proxy_url:
+            client_kwargs["proxy"] = self.proxy_url
+
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            resp = await client.get(url, headers=req_headers)
+            resp.raise_for_status()
+            return resp.content
+
     async def search_illust(self, word: str, r18: bool) -> Optional[Dict[str, Any]]:
         data = await self.get(
             "/v1/search/illust",
@@ -118,7 +138,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.4",
+    "1.0.5",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -134,6 +154,7 @@ class PixivPlugin(Star):
         self.allow_r18 = False
         self.pixiv_proxy = ""
         self.request_timeout_sec = 30
+        self.send_image_as_file = True
         self.client: Optional[PixivClient] = None
         self._load_conf()
 
@@ -172,6 +193,7 @@ class PixivPlugin(Star):
         allow = conf.get("allow_r18", False)
         proxy_url = str(conf.get("pixiv_proxy", "")).strip()
         timeout_raw = conf.get("request_timeout_sec", 30)
+        send_image_as_file_raw = conf.get("send_image_as_file", True)
         try:
             timeout_sec = int(timeout_raw)
         except Exception:
@@ -182,10 +204,16 @@ class PixivPlugin(Star):
         else:
             allow_flag = bool(allow)
 
+        if isinstance(send_image_as_file_raw, str):
+            send_image_as_file = send_image_as_file_raw.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            send_image_as_file = bool(send_image_as_file_raw)
+
         self.refresh_token = token
         self.allow_r18 = allow_flag
         self.pixiv_proxy = proxy_url
         self.request_timeout_sec = max(5, timeout_sec)
+        self.send_image_as_file = send_image_as_file
         self.client = PixivClient(
             token,
             proxy_url=self.pixiv_proxy,
@@ -213,7 +241,18 @@ class PixivPlugin(Star):
 
         if image_url and hasattr(event, "image_result"):
             try:
-                yield event.image_result(image_url)
+                # 部分平台在发送 URL 图片时会走平台侧下载，容易超时
+                if self.send_image_as_file and self.client:
+                    raw = await self.client.get_raw_bytes(image_url)
+                    ext = Path(urlparse(image_url).path).suffix or ".jpg"
+                    tmp_dir = Path(tempfile.gettempdir()) / "astrbot_pixiv"
+                    tmp_dir.mkdir(parents=True, exist_ok=True)
+                    img_path = tmp_dir / f"pixiv_{uid}{ext}"
+                    img_path.write_bytes(raw)
+                    yield event.image_result(str(img_path))
+                else:
+                    yield event.image_result(image_url)
+
                 yield event.plain_result(caption)
                 return
             except Exception:

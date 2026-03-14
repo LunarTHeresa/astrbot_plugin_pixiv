@@ -22,5 +22,11 @@
     "type": "int",
     "default": 30,
     "hint": "网络较慢可调大，例如 60"
+  },
+  "send_image_as_file": {
+    "description": "图片按文件中转发送（推荐开启）",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后插件先通过代理下载图片再发送，可避免 QQ 侧直连 pximg 超时"
   }
 }
