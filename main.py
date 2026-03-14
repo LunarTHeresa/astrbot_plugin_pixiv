@@ -165,6 +165,10 @@ class PixivClient:
             if matched:
                 break
 
+        # R18 再兜底：若关键词本身不是 R-18，就尝试只按 R-18 搜索
+        if not matched and r18 and "r-18" not in word.lower():
+            matched = await _query("R-18", "exact_match_for_tags")
+
         if not matched:
             return None
         return random.choice(matched) if random_pick else matched[0]
@@ -213,6 +217,10 @@ class PixivClient:
             if matched:
                 break
 
+        # R18 小说再兜底：尝试仅按 R-18 标签
+        if not matched and r18 and "r-18" not in word.lower():
+            matched = await _query("R-18", "exact_match_for_tags")
+
         if not matched:
             return None
         return random.choice(matched) if random_pick else matched[0]
@@ -226,7 +234,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.8",
+    "1.0.9",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -326,8 +334,21 @@ class PixivPlugin(Star):
         return f"Pixiv 请求失败：{msg[:120]}"
 
     def _keyword(self, text: str) -> str:
-        text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
-        return text or "女の子"
+        s = text.strip()
+        if not s:
+            return "女の子"
+
+        # 兼容两种输入："/pix xxx" 与 "pix xxx"
+        parts = s.split()
+        if parts:
+            first = parts[0].lstrip("/").lower()
+            known = {"pix", "pixr", "novel", "novelr"}
+            if first in known:
+                s = " ".join(parts[1:]).strip()
+
+        # 再兜底去除开头命令片段
+        s = re.sub(r"^/?[a-zA-Z0-9_]+", "", s).strip()
+        return s or "女の子"
 
     def _guard(self, r18: bool) -> Optional[str]:
         if not self.client:
