@@ -15,6 +15,8 @@
 
 - `pixiv_refresh_token`: 你的 Pixiv refresh_token
 - `allow_r18`: 是否允许 R18 指令（true/false，默认 false）
+- `pixiv_proxy`: Pixiv 代理地址（可选，例如 `http://127.0.0.1:7890`）
+- `request_timeout_sec`: 请求超时秒数（默认 30，网络差可改 60）
 
 > `refresh_token` 可用你目录中的 `get_pixiv_token_manual.py` 获取。
 

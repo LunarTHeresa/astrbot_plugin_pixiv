@@ -10,5 +10,17 @@
     "type": "bool",
     "default": false,
     "hint": "开启后可使用 /pixr 和 /novelr"
+  },
+  "pixiv_proxy": {
+    "description": "Pixiv 代理（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "例如 http://127.0.0.1:7890；服务器无法直连 Pixiv 时填写"
+  },
+  "request_timeout_sec": {
+    "description": "请求超时秒数",
+    "type": "int",
+    "default": 30,
+    "hint": "网络较慢可调大，例如 60"
   }
 }

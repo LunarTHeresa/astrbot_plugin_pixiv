@@ -18,8 +18,10 @@ CLIENT_SECRET = "lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj"
 
 
 class PixivClient:
-    def __init__(self, refresh_token: str):
+    def __init__(self, refresh_token: str, proxy_url: str = "", timeout_sec: int = 30):
         self.refresh_token = refresh_token.strip()
+        self.proxy_url = proxy_url.strip()
+        self.timeout_sec = max(5, int(timeout_sec))
         self.access_token: Optional[str] = None
         self.expire_at: float = 0.0
 
@@ -37,7 +39,11 @@ class PixivClient:
             "refresh_token": self.refresh_token,
             "include_policy": "true",
         }
-        async with httpx.AsyncClient(timeout=30) as client:
+        client_kwargs: Dict[str, Any] = {"timeout": self.timeout_sec}
+        if self.proxy_url:
+            client_kwargs["proxy"] = self.proxy_url
+
+        async with httpx.AsyncClient(**client_kwargs) as client:
             resp = await client.post(PIXIV_OAUTH, headers=headers, data=data)
             resp.raise_for_status()
             payload = resp.json()
@@ -58,7 +64,11 @@ class PixivClient:
 
     async def get(self, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         headers = await self._auth_headers()
-        async with httpx.AsyncClient(timeout=30) as client:
+        client_kwargs: Dict[str, Any] = {"timeout": self.timeout_sec}
+        if self.proxy_url:
+            client_kwargs["proxy"] = self.proxy_url
+
+        async with httpx.AsyncClient(**client_kwargs) as client:
             resp = await client.get(f"{PIXIV_API_BASE}{path}", headers=headers, params=params)
             resp.raise_for_status()
             return resp.json()
@@ -108,7 +118,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.3",
+    "1.0.4",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -122,6 +132,8 @@ class PixivPlugin(Star):
 
         self.refresh_token = ""
         self.allow_r18 = False
+        self.pixiv_proxy = ""
+        self.request_timeout_sec = 30
         self.client: Optional[PixivClient] = None
         self._load_conf()
 
@@ -158,6 +170,13 @@ class PixivPlugin(Star):
 
         token = str(conf.get("pixiv_refresh_token", "")).strip()
         allow = conf.get("allow_r18", False)
+        proxy_url = str(conf.get("pixiv_proxy", "")).strip()
+        timeout_raw = conf.get("request_timeout_sec", 30)
+        try:
+            timeout_sec = int(timeout_raw)
+        except Exception:
+            timeout_sec = 30
+
         if isinstance(allow, str):
             allow_flag = allow.strip().lower() in {"1", "true", "yes", "on"}
         else:
@@ -165,7 +184,13 @@ class PixivPlugin(Star):
 
         self.refresh_token = token
         self.allow_r18 = allow_flag
-        self.client = PixivClient(token) if token else None
+        self.pixiv_proxy = proxy_url
+        self.request_timeout_sec = max(5, timeout_sec)
+        self.client = PixivClient(
+            token,
+            proxy_url=self.pixiv_proxy,
+            timeout_sec=self.request_timeout_sec,
+        ) if token else None
 
     def _keyword(self, text: str) -> str:
         text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
@@ -234,7 +259,16 @@ class PixivPlugin(Star):
             return
 
         kw = self._keyword(event.message_str)
-        item = await self.client.search_illust(kw, False)
+        try:
+            item = await self.client.search_illust(kw, False)
+        except httpx.ConnectTimeout:
+            yield event.plain_result(
+                "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
+            )
+            return
+        except httpx.HTTPError as e:
+            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            return
         if not item:
             yield event.plain_result(f"没有找到普通插画：{kw}")
             return
@@ -250,7 +284,16 @@ class PixivPlugin(Star):
             return
 
         kw = self._keyword(event.message_str)
-        item = await self.client.search_illust(kw, True)
+        try:
+            item = await self.client.search_illust(kw, True)
+        except httpx.ConnectTimeout:
+            yield event.plain_result(
+                "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
+            )
+            return
+        except httpx.HTTPError as e:
+            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            return
         if not item:
             yield event.plain_result(f"没有找到 R18 插画：{kw}")
             return
@@ -266,7 +309,16 @@ class PixivPlugin(Star):
             return
 
         kw = self._keyword(event.message_str)
-        item = await self.client.search_novel(kw, False)
+        try:
+            item = await self.client.search_novel(kw, False)
+        except httpx.ConnectTimeout:
+            yield event.plain_result(
+                "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
+            )
+            return
+        except httpx.HTTPError as e:
+            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            return
         if not item:
             yield event.plain_result(f"没有找到普通小说：{kw}")
             return
@@ -282,7 +334,16 @@ class PixivPlugin(Star):
             return
 
         kw = self._keyword(event.message_str)
-        item = await self.client.search_novel(kw, True)
+        try:
+            item = await self.client.search_novel(kw, True)
+        except httpx.ConnectTimeout:
+            yield event.plain_result(
+                "连接 Pixiv 超时。请检查服务器网络；如在国内服务器，请在插件配置里填写 pixiv_proxy。"
+            )
+            return
+        except httpx.HTTPError as e:
+            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            return
         if not item:
             yield event.plain_result(f"没有找到 R18 小说：{kw}")
             return

@@ -1,5 +1,5 @@
 name: astrbot_plugin_pixiv
-version: 0.1.1
+version: v1.0.4
 author: LunarTHeresa
 description: Pixiv image/novel plugin for AstrBot with optional R18 commands
 repo: "https://github.com/LunarTHeresa/astrbot_plugin_pixiv"
