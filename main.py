@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 import tempfile
 import time
@@ -93,7 +94,7 @@ class PixivClient:
             resp.raise_for_status()
             return resp.content
 
-    async def search_illust(self, word: str, r18: bool) -> Optional[Dict[str, Any]]:
+    async def search_illust(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
         data = await self.get(
             "/v1/search/illust",
             {
@@ -103,15 +104,19 @@ class PixivClient:
                 "filter": "for_ios",
             },
         )
+        matched = []
         for item in data.get("illusts", []):
             x = item.get("x_restrict", 0)
             if r18 and x == 1:
-                return item
-            if (not r18) and x == 0:
-                return item
-        return None
+                matched.append(item)
+            elif (not r18) and x == 0:
+                matched.append(item)
 
-    async def search_novel(self, word: str, r18: bool) -> Optional[Dict[str, Any]]:
+        if not matched:
+            return None
+        return random.choice(matched) if random_pick else matched[0]
+
+    async def search_novel(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
         data = await self.get(
             "/v1/search/novel",
             {
@@ -121,13 +126,17 @@ class PixivClient:
                 "filter": "for_ios",
             },
         )
+        matched = []
         for item in data.get("novels", []):
             x = item.get("x_restrict", 0)
             if r18 and x == 1:
-                return item
-            if (not r18) and x == 0:
-                return item
-        return None
+                matched.append(item)
+            elif (not r18) and x == 0:
+                matched.append(item)
+
+        if not matched:
+            return None
+        return random.choice(matched) if random_pick else matched[0]
 
     async def novel_text(self, novel_id: int) -> str:
         data = await self.get("/v1/novel/text", {"novel_id": novel_id})
@@ -138,7 +147,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.5",
+    "1.0.6",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -219,6 +228,12 @@ class PixivPlugin(Star):
             proxy_url=self.pixiv_proxy,
             timeout_sec=self.request_timeout_sec,
         ) if token else None
+
+    def _token_error_hint(self, err: Exception) -> str:
+        msg = str(err)
+        if "400" in msg and "auth/token" in msg:
+            return "Pixiv token 刷新失败（400）。请重新获取并填写新的 refresh_token。"
+        return f"Pixiv 请求失败：{msg[:120]}"
 
     def _keyword(self, text: str) -> str:
         text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
@@ -306,7 +321,7 @@ class PixivPlugin(Star):
             )
             return
         except httpx.HTTPError as e:
-            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
             yield event.plain_result(f"没有找到普通插画：{kw}")
@@ -331,7 +346,7 @@ class PixivPlugin(Star):
             )
             return
         except httpx.HTTPError as e:
-            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
             yield event.plain_result(f"没有找到 R18 插画：{kw}")
@@ -356,7 +371,7 @@ class PixivPlugin(Star):
             )
             return
         except httpx.HTTPError as e:
-            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
             yield event.plain_result(f"没有找到普通小说：{kw}")
@@ -381,7 +396,7 @@ class PixivPlugin(Star):
             )
             return
         except httpx.HTTPError as e:
-            yield event.plain_result(f"Pixiv 请求失败：{str(e)[:120]}")
+            yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
             yield event.plain_result(f"没有找到 R18 小说：{kw}")

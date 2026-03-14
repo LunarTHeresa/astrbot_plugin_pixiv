@@ -19,6 +19,11 @@
 - `request_timeout_sec`: 请求超时秒数（默认 30，网络差可改 60）
 - `send_image_as_file`: 图片是否先下载为本地文件再发送（默认 true，推荐）
 
+## 常见问题
+
+- 报错 `auth/token 400`：通常是 `pixiv_refresh_token` 已失效，请重新获取 token 后更新配置。
+- 同标签重复作品：插件现已改为从匹配结果中随机返回一条，避免总是第一张。
+
 > `refresh_token` 可用你目录中的 `get_pixiv_token_manual.py` 获取。
 
 ## 说明
