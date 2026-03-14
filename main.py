@@ -108,20 +108,45 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "Pixiv 插件",
     "支持普通/R18插画与小说（txt）发送",
-    "0.1.0",
+    "0.1.1",
     "claude",
 )
 class PixivPlugin(Star):
     def __init__(self, context: Context):
+        # 某些 AstrBot 版本会在初始化流程中读取插件的 proxy 属性
+        self.proxy = None
         super().__init__(context)
-        conf = getattr(context, "config", {}) or {}
-        if hasattr(conf, "get"):
-            self.refresh_token = conf.get("pixiv_refresh_token", "")
-            self.allow_r18 = bool(conf.get("allow_r18", False))
+        self.refresh_token = ""
+        self.allow_r18 = False
+        self.client: Optional[PixivClient] = None
+        self._load_conf()
+
+    def _load_conf(self) -> None:
+        conf: Dict[str, Any] = {}
+
+        # 兼容不同 AstrBot 版本的配置读取方式
+        for candidate in (
+            getattr(self, "config", None),
+            getattr(getattr(self, "context", None), "config", None),
+        ):
+            if isinstance(candidate, dict):
+                conf.update(candidate)
+            elif hasattr(candidate, "get"):
+                try:
+                    conf.update(dict(candidate))
+                except Exception:
+                    pass
+
+        token = str(conf.get("pixiv_refresh_token", "")).strip()
+        allow = conf.get("allow_r18", False)
+        if isinstance(allow, str):
+            allow_flag = allow.strip().lower() in {"1", "true", "yes", "on"}
         else:
-            self.refresh_token = ""
-            self.allow_r18 = False
-        self.client = PixivClient(self.refresh_token) if self.refresh_token else None
+            allow_flag = bool(allow)
+
+        self.refresh_token = token
+        self.allow_r18 = allow_flag
+        self.client = PixivClient(token) if token else None
 
     def _keyword(self, text: str) -> str:
         text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
