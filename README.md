@@ -23,6 +23,7 @@
 
 - 报错 `auth/token 400`：通常是 `pixiv_refresh_token` 已失效，请重新获取 token 后更新配置。
 - 同标签重复作品：插件现已改为从匹配结果中随机返回一条，避免总是第一张。
+- R18 搜索为空：插件会自动尝试追加 `R-18` 标签再检索；若仍无结果，可换更明确关键词。
 
 > `refresh_token` 可用你目录中的 `get_pixiv_token_manual.py` 获取。
 

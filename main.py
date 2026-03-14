@@ -95,44 +95,56 @@ class PixivClient:
             return resp.content
 
     async def search_illust(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
-        data = await self.get(
-            "/v1/search/illust",
-            {
-                "word": word,
-                "search_target": "partial_match_for_tags",
-                "sort": "date_desc",
-                "filter": "for_ios",
-            },
-        )
-        matched = []
-        for item in data.get("illusts", []):
-            x = item.get("x_restrict", 0)
-            if r18 and x == 1:
-                matched.append(item)
-            elif (not r18) and x == 0:
-                matched.append(item)
+        async def _query(q_word: str, target: str = "partial_match_for_tags") -> list[Dict[str, Any]]:
+            data = await self.get(
+                "/v1/search/illust",
+                {
+                    "word": q_word,
+                    "search_target": target,
+                    "sort": "date_desc",
+                    "filter": "for_ios",
+                },
+            )
+            matched = []
+            for item in data.get("illusts", []):
+                x = int(item.get("x_restrict", 0) or 0)
+                if r18 and x >= 1:
+                    matched.append(item)
+                elif (not r18) and x == 0:
+                    matched.append(item)
+            return matched
+
+        matched = await _query(word)
+        if not matched and r18:
+            matched = await _query(f"{word} R-18", "exact_match_for_tags")
 
         if not matched:
             return None
         return random.choice(matched) if random_pick else matched[0]
 
     async def search_novel(self, word: str, r18: bool, random_pick: bool = True) -> Optional[Dict[str, Any]]:
-        data = await self.get(
-            "/v1/search/novel",
-            {
-                "word": word,
-                "search_target": "partial_match_for_tags",
-                "sort": "date_desc",
-                "filter": "for_ios",
-            },
-        )
-        matched = []
-        for item in data.get("novels", []):
-            x = item.get("x_restrict", 0)
-            if r18 and x == 1:
-                matched.append(item)
-            elif (not r18) and x == 0:
-                matched.append(item)
+        async def _query(q_word: str, target: str = "partial_match_for_tags") -> list[Dict[str, Any]]:
+            data = await self.get(
+                "/v1/search/novel",
+                {
+                    "word": q_word,
+                    "search_target": target,
+                    "sort": "date_desc",
+                    "filter": "for_ios",
+                },
+            )
+            matched = []
+            for item in data.get("novels", []):
+                x = int(item.get("x_restrict", 0) or 0)
+                if r18 and x >= 1:
+                    matched.append(item)
+                elif (not r18) and x == 0:
+                    matched.append(item)
+            return matched
+
+        matched = await _query(word)
+        if not matched and r18:
+            matched = await _query(f"{word} R-18", "exact_match_for_tags")
 
         if not matched:
             return None
@@ -147,7 +159,7 @@ class PixivClient:
     "astrbot_plugin_pixiv",
     "LunarTHeresa",
     "Pixiv官方API 普通/R18 图片与小说发送",
-    "1.0.6",
+    "1.0.7",
     "https://github.com/LunarTHeresa/astrbot_plugin_pixiv",
 )
 class PixivPlugin(Star):
@@ -349,7 +361,7 @@ class PixivPlugin(Star):
             yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
-            yield event.plain_result(f"没有找到 R18 插画：{kw}")
+            yield event.plain_result(f"没有找到 R18 插画：{kw}（可尝试 /pixr {kw} R-18）")
             return
 
         async for out in self._send_image(event, item):
@@ -399,7 +411,7 @@ class PixivPlugin(Star):
             yield event.plain_result(self._token_error_hint(e))
             return
         if not item:
-            yield event.plain_result(f"没有找到 R18 小说：{kw}")
+            yield event.plain_result(f"没有找到 R18 小说：{kw}（可尝试 /novelr {kw} R-18）")
             return
 
         async for out in self._send_novel(event, item):
