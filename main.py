@@ -106,16 +106,19 @@ class PixivClient:
 
 @register(
     "astrbot_plugin_pixiv",
-    "Pixiv 插件",
-    "支持普通/R18插画与小说（txt）发送",
-    "0.1.1",
-    "claude",
+    "LunarTHeresa",
+    "Pixiv官方API 普通/R18 图片与小说发送",
+    "1.0.2",
 )
 class PixivPlugin(Star):
+    # 作为类属性预置，避免框架在实例初始化前读取时报错
+    proxy = None
+
     def __init__(self, context: Context):
-        # 某些 AstrBot 版本会在初始化流程中读取插件的 proxy 属性
-        self.proxy = None
         super().__init__(context)
+        # 兼容部分 AstrBot 版本在初始化阶段读取 proxy
+        self.proxy = getattr(getattr(context, "provider", None), "proxy", None)
+
         self.refresh_token = ""
         self.allow_r18 = False
         self.client: Optional[PixivClient] = None
@@ -137,6 +140,15 @@ class PixivPlugin(Star):
                 except Exception:
                     pass
 
+        getter = getattr(self, "get_config", None)
+        if callable(getter):
+            try:
+                dynamic_conf = getter() or {}
+                if isinstance(dynamic_conf, dict):
+                    conf.update(dynamic_conf)
+            except Exception:
+                pass
+
         token = str(conf.get("pixiv_refresh_token", "")).strip()
         allow = conf.get("allow_r18", False)
         if isinstance(allow, str):
@@ -147,6 +159,13 @@ class PixivPlugin(Star):
         self.refresh_token = token
         self.allow_r18 = allow_flag
         self.client = PixivClient(token) if token else None
+
+    async def initialize(self):
+        # 部分版本会在 initialize 后才注入配置，故再次加载
+        self._load_conf()
+
+    async def terminate(self):
+        return
 
     def _keyword(self, text: str) -> str:
         text = re.sub(r"^/[a-zA-Z0-9_]+", "", text.strip()).strip()
